@@ -142,12 +142,15 @@ def run(popen_args):
         A triplet with return code, output and error stream contents.
     :rtype: ProcessInfo
     """
-    proc = subprocess.Popen(popen_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output, error = proc.communicate()
-    returncode = proc.wait()
-    proc_info = ProcessInfo(
-        returncode, _decode(output), _decode(error))
-    return proc_info
+    try:
+        proc = subprocess.Popen(popen_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output, error = proc.communicate()
+        returncode = proc.wait()
+        proc_info = ProcessInfo(
+            returncode, _decode(output), _decode(error))
+        return proc_info
+    except:
+        return ProcessInfo(None, None, None)
 
 
 def _strip_to_kb(kb_string):
@@ -161,7 +164,8 @@ def _strip_to_kb(kb_string):
     :return: The cleaned up KB string.
     :rtype: str
     """
-    return re.match('KB\d+', kb_string).group()    
+    if re.match('KB\d+', kb_string):
+        return re.match('KB\d+', kb_string).group()
 
 
 def list_kbs():
@@ -179,9 +183,7 @@ def list_kbs():
     :rtype: list(str)
     """
     cmd = ['wmic', 'qfe', 'get', 'hotfixid']
-
     proc_info = run(cmd)
-
     return [_strip_to_kb(s) for s in proc_info.stdout.split()[1:]]
 
 
@@ -197,7 +199,7 @@ def check_installed_kbs():
     installed_kbs = list_kbs()
     def kb_found(required_one, all_installed):
         return required_one in all_installed
-    
+
     fix_installed = any(kb_found(required_one, installed_kbs)
                         for required_one in required_kbs)
     print('yes' if fix_installed else 'no')
@@ -214,7 +216,10 @@ def _is_powershell_cmdlet_available(cmdlet):
            'Write-Host',
            '$([bool](Get-Command ' + cmdlet + ' -ErrorAction SilentlyContinue))']
     proc_info = run(cmd)
-    return proc_info.stdout.strip().lower() == 'true'
+    if proc_info.stderr is not None:
+        return proc_info.stdout.strip().lower() == 'true'
+    else:
+        return None
     
 
 def can_check_smb_v1():
@@ -269,13 +274,24 @@ def check_smb_v1_registry():
     # third line contains the value, which should be '0' or '1', or ''
     # if the key doesn't exist.  In that case it's assumed that SMBv1
     # is active by default
+    value = proc_info.stdout.split()[2].strip()
     try:
-        value = proc_info.stdout.split()[2].strip()
-        return False if value == '' else not bool(int(value))
+        enable = bool(int(value))
+        return False if value == '' else not enable
     except:
         return False
 
-
+def check_smb_v1_sc():
+    cmd = ['sc', 'query',
+           'LanmanServer']
+    # third line contains the value, which should be 'STOP_PENDING' or 'RUNNING'
+    # if the key doesn't exist.  In that case it's assumed that SMBv1
+    # is active by default
+    proc_info = run(cmd)
+    value = proc_info.stdout.split()[9].lower()
+    if value =='running':
+        return False
+    return True
 
 def check_smb_v1():
     """Check if the SMBv1 protocol is disabled.
@@ -288,10 +304,13 @@ def check_smb_v1():
     :rtype: bool
     """
     print('Checking if the SMB v1 protocol is disabled...')
-    if can_check_smb_v1():
+    can_check_smb_v1_val = can_check_smb_v1()
+    if can_check_smb_v1_val:
         return check_smb_v1_powershell()
-    # else:
-    return check_smb_v1_registry()
+    elif can_check_smb_v1_val is not None:
+        return check_smb_v1_registry()
+    else:
+        return check_smb_v1_sc()
 
 
 def can_set_smb_v1():
@@ -306,6 +325,36 @@ def can_set_smb_v1():
     """
     return _is_powershell_cmdlet_available('Set-SmbServerConfiguration')
 
+
+def set_smb_v1_sc(enable):
+    """Enable or disable the SMBv1 protocol through the registry.
+
+    This requires admin privileges.  If run without, exits the script
+    with return code 1.
+
+    :param bool enable: Whether to enable or disable the protocol.
+    """
+
+    startup = 'auto' if enable else 'disabled'
+    action = 'start' if enable else 'stop'
+    cmd = ['sc', action,
+           'LanmanServer']
+    proc_info = run(cmd)
+    if proc_info.stderr:
+        print()
+        sys.stderr.write('Error:' + proc_info.stderr)
+        sys.exit(1)
+    # else:
+    print(proc_info.stdout)
+
+    cmd = 'sc config LanmanServer start= '+startup
+    proc_info = run(cmd)
+    if proc_info.stderr:
+        print()
+        sys.stderr.write('Error:' + proc_info.stderr)
+        sys.exit(1)
+    # else:
+    print(proc_info.stdout)
 
 def set_smb_v1_powershell(enable):
     """Enable or disable the SMBv1 protocol through a Cmdlet.
@@ -359,10 +408,13 @@ def set_smb_v1(enable):
 
     :param bool enable: Whether to enable or disable the protocol.
     """
-    if can_set_smb_v1():
+    can_set_smb_v1_val = can_set_smb_v1()
+    if can_set_smb_v1_val:
         set_smb_v1_powershell(enable)
-    else:
+    elif can_set_smb_v1_val is not None:
         set_smb_v1_registry(enable)
+    else:
+        set_smb_v1_sc(enable)
     if not enable:
         print('The SMBv1 protocol has been disabled.'
               ' The system is no longer vulnerable.')

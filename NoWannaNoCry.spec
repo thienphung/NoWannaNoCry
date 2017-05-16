@@ -18,7 +18,7 @@ pyz = PYZ(a.pure, a.zipped_data,
              cipher=block_cipher)
 exe = EXE(pyz,
           a.scripts,
-          a.binaries,
+		  a.binaries,
           a.zipfiles,
           a.datas,
           name='NoWannaNoCry',
