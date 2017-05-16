@@ -26,13 +26,13 @@ __version__ = '0.1.dev3'
 import sys
 from collections import namedtuple
  
-if sys.platform != 'win32':
-    sys.exit('This script is meant to be run on a Windows machine.'
-             ' Only Windows machines are vulnerable to WCry.')
-
-if sys.getwindowsversion().platform != 2:
-    sys.exit('Your Windows version is not supported by this script'
-             ' (and probably not vulnerable).')
+# if sys.platform != 'win32':
+#     sys.exit('This script is meant to be run on a Windows machine.'
+#              ' Only Windows machines are vulnerable to WCry.')
+#
+# if sys.getwindowsversion().platform != 2:
+#     sys.exit('Your Windows version is not supported by this script'
+#              ' (and probably not vulnerable).')
 
 import argparse
 import ctypes
@@ -143,9 +143,10 @@ def run(popen_args):
     :rtype: ProcessInfo
     """
     proc = subprocess.Popen(popen_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    proc.wait()
+    output, error = proc.communicate()
+    returncode = proc.wait()
     proc_info = ProcessInfo(
-        proc.returncode, _decode(proc.stdout.read()), _decode(proc.stderr.read()))
+        returncode, _decode(output), _decode(error))
     return proc_info
 
 
@@ -178,8 +179,9 @@ def list_kbs():
     :rtype: list(str)
     """
     cmd = ['wmic', 'qfe', 'get', 'hotfixid']
-    
+
     proc_info = run(cmd)
+
     return [_strip_to_kb(s) for s in proc_info.stdout.split()[1:]]
 
 
@@ -193,7 +195,6 @@ def check_installed_kbs():
     print('Checking if a KB with a fix is installed...', end=' ')
     required_kbs = REQUIRED_KB[os_id_index()]
     installed_kbs = list_kbs()
-    
     def kb_found(required_one, all_installed):
         return required_one in all_installed
     
@@ -268,8 +269,12 @@ def check_smb_v1_registry():
     # third line contains the value, which should be '0' or '1', or ''
     # if the key doesn't exist.  In that case it's assumed that SMBv1
     # is active by default
-    value = proc_info.stdout.split()[2].strip()  
-    return False if value == '' else not bool(int(value))
+    try:
+        value = proc_info.stdout.split()[2].strip()
+        return False if value == '' else not bool(int(value))
+    except:
+        return False
+
 
 
 def check_smb_v1():
@@ -393,19 +398,22 @@ def am_admin():
 def run_as_admin():
     """If required, rerun the script and request admin privileges."""
     if not am_admin():
-        try:
-            print('Restarting and requesting admin privileges.')
-            ctypes.windll.shell32.ShellExecuteW(
-                None, 'Runas', sys.executable, ' '.join(sys.argv), None, 1)
-            sys.exit()
-        except Exception as e:
-            print(e)
-            msg = ('Unable to elevate privileges. You need to rerun the script'
-                   ' with Administrator privileges yourself. E.g. try pressing'
-                   ' the Windows key + x, then select "Command Prompt (Admin)"'
-                   ' and run the script in that console.')
-            sys.exit(msg)
-
+        print("Please run as admin privileges.")
+        return False
+        # try:
+        #     print('Restarting and requesting admin privileges.')
+        #     ctypes.windll.shell32.ShellExecuteW(
+        #         None, 'Runas', sys.executable, ' '.join(sys.argv), None, 1)
+        #     sys.exit()
+        # except Exception as e:
+        #     print(e)
+        #     msg = ('Unable to elevate privileges. You need to rerun the script'
+        #            ' with Administrator privileges yourself. E.g. try pressing'
+        #            ' the Windows key + x, then select "Command Prompt (Admin)"'
+        #            ' and run the script in that console.')
+        #     print(msg)
+    else:
+        return True
 
 def check():
     """Check if the system is vulnerable to the WCry malware.
@@ -434,12 +442,12 @@ def mitigate():
     
     Disabling the SMBv1 protocol requires admin privileges.
     """
-    if check():
-        sys.exit()  # system isn't vulnerable
+    if check() is False:
+        #sys.exit()  # system isn't vulnerable
     # else:
-    print('Trying to turn off SMBv1, this may require a rerun with admin privileges...')
-    run_as_admin()
-    set_smb_v1(False)
+        print('Trying to turn off SMBv1, this may require a rerun with admin privileges...')
+        if run_as_admin():
+            set_smb_v1(False)
 
 
 def fix():
@@ -463,20 +471,20 @@ def cli_args():
     return parser.parse_args()
 
 
-def main():
-    """Main entry point for the NoWannaNoCry script."""
-    try:
-        args = cli_args()
-        if args.check and not args.mitigate:
-            check()
-        elif args.mitigate:
-            mitigate()
-        # TODO: implement & call fix()
-
-        input('\r\nDone. Press any key to exit.')
-    except Exception as e:
-        sys.exit(e)
-
-
-if __name__ == '__main__':
-    main()
+# def main():
+#     """Main entry point for the NoWannaNoCry script."""
+#     try:
+#         args = cli_args()
+#         if args.check and not args.mitigate:
+#             check()
+#         elif args.mitigate:
+#             mitigate()
+#         # TODO: implement & call fix()
+#
+#         input('\r\nDone. Press any key to exit.')
+#     except Exception as e:
+#         sys.exit(e)
+#
+#
+# if __name__ == '__main__':
+#     main()

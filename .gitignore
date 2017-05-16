@@ -34,3 +34,6 @@ local.properties
 # Emacs temporary
 *~
 \#*\#
+/dist
+/build
+/.idea
