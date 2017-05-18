@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from src import nwnc
 import sys
 if sys.platform != 'win32':
@@ -7,22 +8,24 @@ if sys.platform != 'win32':
 if sys.getwindowsversion().platform != 2:
     sys.exit('Your Windows version is not supported by this script'
              ' (and probably not vulnerable).')
-def action():
-    name = raw_input('\r\nDo you want to continue? \r\n[D]isable SMB\r\n[F]ix SMB \r\n[A]ll\n')
-    if name.lower() == 'd':
-        nwnc.mitigate()
-    elif name.lower() == 'f':
-        nwnc.fix()
-    elif name.lower() == 'a':
-        nwnc.mitigate()
-        nwnc.fix()
-    else:
-        action()
+def action(str):
+    name = raw_input('\rDo you want to %s? [Y/n]' % str)
+    if name.lower() != 'n':
+        if str == 'install':
+            nwnc.fix()
+        elif str == 'disable':
+            nwnc.mitigate()
 if __name__ == '__main__':
     print('NoWannaNoCry to help mitigate against the WCry/WannaCry malware.\nSource code: https://github.com/thienphung/NoWannaNoCry \n')
     try:
-        if nwnc.check() is not True:
-            action()
+        fix_installed = nwnc.check_installed_kbs()
+        if fix_installed is not True:
+            action('install')
+        smb_v1_disabled = nwnc.check_smb_v1()
+        if smb_v1_disabled is not True:
+            action('disable', nwnc.mitigate())
+        not_vulnerable = fix_installed or smb_v1_disabled
+        print('The system is {}vulnerable.'.format('not ' if not_vulnerable else ''))
         input('\r\nDone. Press any key to exit.')
     except Exception as e:
         sys.exit(e)

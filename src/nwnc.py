@@ -27,11 +27,11 @@ import sys
 from collections import namedtuple
  
 if sys.platform != 'win32':
-    sys.exit('This script is meant to be run on a Windows machine.'
+    print('This script is meant to be run on a Windows machine.'
              ' Only Windows machines are vulnerable to WCry.')
 
 if sys.getwindowsversion().platform != 2:
-    sys.exit('Your Windows version is not supported by this script'
+    print('Your Windows version is not supported by this script'
              ' (and probably not vulnerable).')
 
 import argparse
@@ -354,7 +354,7 @@ def check_smb_v1_powershell():
     proc_info = run(cmd)
     if proc_info.stderr:
         sys.stderr.write('Error:\r\n' + proc_info.stderr)
-        sys.exit(1)
+        #sys.exit(1)
     # else:
     # print(proc_info.stdout)
     return proc_info.stdout.split()[2].strip().lower() == 'false'
@@ -432,7 +432,7 @@ def set_smb_v1_powershell(enable):
     if proc_info.stderr:
         print()
         sys.stderr.write('Error:' + proc_info.stderr)
-        sys.exit(1)
+        #sys.exit(1)
     # else:
     print(proc_info.stdout)
 
@@ -454,7 +454,7 @@ def set_smb_v1_registry(enable):
     if proc_info.stderr:
         print()
         sys.stderr.write('Error:' + proc_info.stderr)
-        sys.exit(1)
+        #sys.exit(1)
     # else:
     print(proc_info.stdout)
 
@@ -536,14 +536,14 @@ def run_as_admin(extra_args=None):
             if sys.version_info[0] == 2:
                 exe = _decode(exe)
             ctypes.windll.shell32.ShellExecuteW(None, 'Runas', exe, args, None, 1)
-            sys.exit()
+            #sys.exit()
         except Exception as e:
             print(e)
             msg = ('Unable to elevate privileges. You need to rerun the script'
                    ' with Administrator privileges yourself. E.g. try pressing'
                    ' the Windows key + x, then select "Command Prompt (Admin)"'
                    ' and run the script in that console.')
-            sys.exit(msg)
+            print(msg)
 
 
 def check():
@@ -585,6 +585,27 @@ def _get_os_arch():
     """TODO: doc; find out what to do on an ia64 system; test it"""
     return 'x64' if platform.machine().endswith('64') else 'x86'
 
+def download_progress_hook(count, blockSize, totalSize):
+    """A hook to report the progress of a download. This is mostly intended for
+    users with slow internet connections. Reports every 1% change in download
+    progress.
+    """
+    global last_percent_reported
+    percent = int(count * blockSize * 100 / totalSize)
+    try:
+        if last_percent_reported != percent:
+            if percent % 5 == 0:
+                sys.stdout.write("%s%%" % percent)
+            else:
+                sys.stdout.write(".")
+            sys.stdout.flush()
+
+            last_percent_reported = percent
+        if percent == 100:
+            print('')
+    except Exception, e:
+        print(e.message)
+
 
 def fix(download_directory=None):
     """Fix the SMBv1 security hole by installing a Windows KB update.
@@ -607,7 +628,7 @@ def fix(download_directory=None):
     # else:
     if os_id_field_name() == 'win10_s2016':
         # this script currently doesn't handle Windows 10 / Server 2016
-        sys.exit('Downloading and installing an update for Windows 10 or'
+        print('Downloading and installing an update for Windows 10 or'
                  ' Windows Server 2016 is currently not supported.'
                  ' Please enable automatic updates instead.')
     # else:
@@ -620,20 +641,20 @@ def fix(download_directory=None):
         download_directory = tempfile.gettempdir()
     kb_absolute_path = os.path.join(download_directory, kb_file_name)
     
-    # Download the KB update only if it doesn't already exist in the
-    # download directory.  The script may have been restarted to get
-    # admin privileges, so the file could already be there.
-    if not os.path.exists(kb_absolute_path):
-        try:
-            urlretrieve(kb_download_url, kb_absolute_path)
-            print("The KB update has been downloaded to: " + kb_absolute_path)
-        except Exception as e:
-            sys.stderr.write('Error:' + e)
-            sys.exit('Unable to download the KB update for your system.')
-    else:
-        msg = "Using KB update '{}' in directory '{}'.".format(
-            kb_file_name, os.path.abspath(download_directory))
-        print(msg)
+    # # Download the KB update only if it doesn't already exist in the
+    # # download directory.  The script may have been restarted to get
+    # # admin privileges, so the file could already be there.
+    # if not os.path.exists(kb_absolute_path):
+    try:
+        urlretrieve(kb_download_url, kb_absolute_path, reporthook=download_progress_hook)
+        print("The KB update has been downloaded to: " + kb_absolute_path)
+    except Exception as e:
+        sys.stderr.write('Error:' + e)
+        print('Unable to download the KB update for your system.')
+# else:
+#     msg = "Using KB update '{}' in directory '{}'.".format(
+#         kb_file_name, os.path.abspath(download_directory))
+#     print(msg)
     
     # install the update:
     if kb_file_name.endswith('.exe'):
@@ -644,7 +665,7 @@ def fix(download_directory=None):
         inst_exe = os.path.join(_get_system_root(), 'system32', 'wusa.exe')
         if not os.path.exists(inst_exe):
             # TODO: are there systems where wusa.exe isn't present?
-            sys.exit("Windows Update Standalone Installer not found."
+            print("Windows Update Standalone Installer not found."
                      " You will have to find a way to install the file"
                      " '{}' manually".format(kb_absolute_path))
         # else:
@@ -676,7 +697,7 @@ def cli_args():
     # else:
     return parser.parse_args()
 
-
+last_percent_reported = 0
 def main():
     """Main entry point for the NoWannaNoCry script."""
     try:
